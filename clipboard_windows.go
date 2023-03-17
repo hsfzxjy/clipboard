@@ -338,11 +338,18 @@ func read(t Format) (buf []byte, err error) {
 	}
 }
 
+var closedChannel <-chan struct{}
+
+func init() {
+	ch := make(chan struct{})
+	close(ch)
+	closedChannel = ch
+}
+
 // write writes the given data to clipboard and
 // returns true if success or false if failed.
 func write(t Format, buf []byte) (<-chan struct{}, error) {
 	errch := make(chan error)
-	changed := make(chan struct{}, 1)
 	go func() {
 		// make sure GetClipboardSequenceNumber happens with
 		// OpenClipboard on the same thread.
@@ -379,24 +386,14 @@ func write(t Format, buf []byte) (<-chan struct{}, error) {
 		// Close the clipboard otherwise other applications cannot
 		// paste the data.
 		closeClipboard.Call()
-
-		cnt, _, _ := getClipboardSequenceNumber.Call()
 		errch <- nil
-		for {
-			time.Sleep(time.Second)
-			cur, _, _ := getClipboardSequenceNumber.Call()
-			if cur != cnt {
-				changed <- struct{}{}
-				close(changed)
-				return
-			}
-		}
+		return
 	}()
 	err := <-errch
 	if err != nil {
 		return nil, err
 	}
-	return changed, nil
+	return closedChannel, nil
 }
 
 func watch(ctx context.Context, t Format) <-chan []byte {
